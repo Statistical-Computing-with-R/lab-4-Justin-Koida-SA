@@ -1,10 +1,19 @@
 ---
 title: "Lab 4: Childcare Costs in California"
 author: "Justin Koida"
-format: html
+format: 
+  html:
+    theme: darkly
+    toc: true
+    toc-depth: 2
+    toc-title: Lab 4 Table of Contents
 editor: source
 embed-resources: true
+code-tools: true
+echo: true
+code-fold: true
 ---
+
 
 ## The Data
 
@@ -17,6 +26,7 @@ The data come to us from [TidyTuesday](https://github.com/rfordatascience/tidytu
 
 ```{r}
 #| label: setup
+library(tidyverse)
 
 ```
 
@@ -27,8 +37,16 @@ childcare_costs <- read_csv('https://raw.githubusercontent.com/rfordatascience/t
 
 counties <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-05-09/counties.csv')
 ```
+```{r}
+summary(childcare_costs)
+childcare_costs
+```
 
 **1. Briefly describe the dataset (~ 4 sentences). What information does it contain?**
+
+childcare_costs is a dataset with 61 columns, and 34567 rows. Each column is of type double. From a brief look at the data, it looks like study_year may be pretty important. The study_year column ranges from 2008 to 2018. 
+
+
 
 ## California Childcare Costs
 
@@ -39,7 +57,10 @@ Let's start by focusing only on California.
 
 ```{r}
 #| label: ca-childcare-costs
-
+ca_childcare <- counties |>
+  filter(state_abbreviation == "CA") |>
+  inner_join(childcare_costs, by = join_by(county_fips_code))
+print(ca_childcare)
 ```
 
 **3. Using a function from the `forcats` package, complete the code below to create a new variable where each county is categorized into one of the [10 Census regions](https://census.ca.gov/regions/) in California. Use the Region description (from the plot), not the Region number.**  
@@ -47,10 +68,30 @@ Let's start by focusing only on California.
 
 ```{r}
 #| label: recoding-county-to-census-regions
-
+#| 
 ca_childcare <- ca_childcare |> 
   mutate(county_name = str_remove(county_name, " County")) |>
-  ...
+  mutate(region = fct_collapse(county_name,
+     "Superior" = c("Butte", "Colusa", "El Dorado", "Glenn", "Lassen", 
+      "Modoc", "Nevada", "Placer", "Plumas", "Sacramento", 
+      "Shasta", "Sierra", "Siskiyou", "Sutter", "Tehama", 
+      "Yolo", "Yuba"),
+    "North Coast" = c("Del Norte", "Humboldt", "Lake", "Mendocino", 
+                                "Napa", "Sonoma", "Trinity"),
+    "San Francisco Bay Area" = c("Alameda", "Contra Costa", "Marin", 
+                                "San Francisco", "San Mateo", "Santa Clara", "Solano"),
+    "Northern San Joaquin Valley" = c("Alpine", "Amador", "Calaveras", "Madera", 
+                                "Mariposa", "Merced", "Mono", "San Joaquin", 
+                                "Stanislaus", "Tuolumne"),
+    "Central Coast" = c("Monterey", "San Benito", "San Luis Obispo", 
+                                "Santa Barbara", "Santa Cruz", "Ventura"),
+    "Southern San Joaquin Valley" = c("Fresno", "Inyo", "Kern", "Kings", "Tulare"),
+    "Inland Empire" = c("Riverside", "San Bernardino"),
+    "Los Angeles County" = "Los Angeles",
+    "Orange" = "Orange",
+    "San Diego" = c("Imperial", "San Diego")
+    ))
+print(ca_childcare)
 ```
 
 
@@ -59,6 +100,20 @@ ca_childcare <- ca_childcare |>
 ```{r}
 #| label: median-income-by-region-over-time
 
+median_income_region <- ca_childcare |>
+  filter(study_year %in% c(2008, 2018)) |>
+  group_by(region, study_year) |>
+  summarize(median_income = median(mhi_2018, na.rm=TRUE)) |>
+  pivot_wider(
+    names_from = study_year,
+    values_from = median_income,
+    names_prefix = "med_income_"
+    ) |>
+  arrange(med_income_2018)
+
+#median_income_region <- median_income_region[order(median_income_region$med_income_2018, decreasing = TRUE),]  #https://bookdown.org/ndphillips/YaRrr/order-sorting-data.html
+
+print(median_income_region)
 ```
 
 
@@ -67,15 +122,67 @@ ca_childcare <- ca_childcare |>
 
 ```{r}
 #| label: lowest-median-weekly-price-2018
+#| 
+median_child <- ca_childcare |>
+  filter(study_year == 2018) |>
+  group_by(region) |>
+  summarize(mcsa_median = median(mcsa, na.rm=TRUE)) |>
+  filter(mcsa_median == min(mcsa_median))
+
+print(median_child)
 
 ```
+North Coast has the lowest `median` full-time median weekly price for center-based childcare for infants in 2018. North Coast also had the lowest median income for 2018.
+
 
 **6. The following plot shows, for all ten regions, the change over time of the full-time median price for center-based childcare for infants, toddlers, and preschoolers. Recreate the plot. You do not have to replicate the exact colors or theme, but your plot should have the same content, including the order of the facets and legend, reader-friendly labels, axes breaks, and a loess smoother.**
+
+sources
+
+https://ggplot2.tidyverse.org/reference/scale_continuous.html
+https://ggplot2.tidyverse.org/articles/faq-customising.html#:~:text=How%20can%20I%20change%20the%20default%20font%20size%20in%20ggplot2,the%20theme%20you're%20using.
 
 ![Plot to recreate](https://atheobold.github.io/groupworthy-data-science/labs/instructions/images/lab-4-recreate-plot.png)
 
 ```{r}
 #| label: recreate-plot
+
+#by region 
+#x axis = year
+#y axisi is med price change 
+region_graph <- ca_childcare |>
+  group_by(region) |>
+  rename(
+    Toddler = mc_toddler,
+    Preschool = mc_preschool,
+    Infant = mc_infant
+    ) |>
+  pivot_longer(
+    cols = c("Infant", "Toddler", "Preschool"),
+    names_to = "child_group",
+    values_to = "med_price",
+    names_prefix = "med_price_"
+  ) |>
+  mutate(child_group = fct_relevel(child_group, "Infant", "Toddler", "Preschool")) |>
+  select(c("region", "study_year", "child_group", "med_price"))
+
+#print(region_graph)
+ggplot(region_graph, 
+       aes(
+         x = study_year, 
+         y = med_price,
+         color = region)) + 
+  geom_smooth(linewidth = .1) +
+  geom_point() +
+  facet_wrap(~child_group) +
+  labs(
+    subtitle = "Weekly Median Price for Center-Based Childcare ($)",
+    x = "Study Year",
+    y = NULL,
+    color = "California Region"
+       ) +
+  scale_x_continuous(limits = c(2008, 2018), breaks = c(2008, 2010, 2012, 2014, 2016, 2018)) +
+  theme(axis.text = element_text(size = 6))
 
 ```
 
@@ -84,19 +191,41 @@ ca_childcare <- ca_childcare |>
 
 **7. Create a scatterplot showing the relationship between median household income (expressed in 2018 dollars) and the full-time median weekly price charged for center-based childcare for an infant in California. Overlay a linear regression line (lm) to show the trend.**
 
+source
+https://stackoverflow.com/questions/15633714/adding-a-regression-line-on-a-ggplot
+
 ```{r}
 #| label: scatterplot-median-income-vs-childcare-cost
-
+scatter_data <- ca_childcare |>
+  select(c("mhi_2018", "mc_infant")) |>
+  ggplot(aes(x = mhi_2018, y = mc_infant)) +
+  geom_point(color = "red") +
+  geom_smooth(method="lm", formula= y ~ x)
+  
+print(scatter_data)
+#lm(y ~ x, scatter_data)
 ```
 
 **8. Look up the documentation for `lm()` and fit a linear regression model to the relationship shown in your plot above.**
 
 ```{r}
 # complete the code provided
-reg_mod1 <- lm()
+linear_reg <- ca_childcare |>
+  select(c("mhi_2018", "mc_infant"))
+reg_mod1 <- lm(mc_infant ~ mhi_2018, linear_reg)
 summary(reg_mod1)
 ```
 
 **9. Using the output from `summary()`, write out the estimated regression line (recall: $y = mx + b$).**
 
+my estimated regression line would be mc_infant = 2.241e-03(mhi_2018) + 1.317e+02
+
 **10. Do you have evidence to conclude there is a relationship between the median household income and the median weekly cost of center-based childcare for infants in California? Cite values from your `summary()` output to support your claim!**
+
+sources
+
+https://www.datacamp.com/tutorial/linear-regression-R
+https://towardsdatascience.com/understanding-linear-regression-output-in-r-7a9cbda948b3
+
+With a large Fval of 1106, and a pval of < 2.2e-16 we have significant evidence to reject that there is no linear relationship
+between mc_infant and mhi_2018. There is strong evidence to suggest that there is a linear relationship between our 2 vars.
